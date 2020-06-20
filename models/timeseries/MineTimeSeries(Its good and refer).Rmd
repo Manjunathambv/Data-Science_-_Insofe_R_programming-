@@ -1,0 +1,484 @@
+---
+title: "TimeSeries"
+author: "Manjunatha B V"
+date: "01/04/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+```{r}
+
+x=10
+rm(list = ls())
+```
+```{r}
+library(zoo) # Z's Ordered Observations
+library(dplyr)
+library(TTR) # Technical Trading Rules
+library(forecast)
+library(DMwR)
+```
+```{r}
+data = readRDS("Data.rds")
+```
+
+```{r}
+dim(data)
+```
+
+```{r}
+summary(data)
+```
+```{r}
+str(data)
+```
+
+```{r}
+sum(is.na(data))
+
+```
+```{r}
+colSums(is.na(data))
+```
+```{r}
+data %>% dplyr::group_by(SKU)%>%dplyr::summarise(Count_sku = n())
+
+
+```
+
+
+```{r}
+data$SKU = as.factor(data$SKU)
+data$Date = as.Date(data$Date, format = "%Y-%m-%d")
+str(data)
+summary(data)
+```
+
+
+
+
+
+
+```{r}
+data1 = subset(data, data$SKU==3)
+data1
+data2 = dplyr::filter(.data = data, data$SKU==3)
+str(data)
+```
+
+```{r}
+head(data2, n = 10)
+```
+
+```{r}
+str(data2)
+```
+
+```{r eval=FALSE, include=FALSE}
+data$Date = as.Date(x = data$Date, format = "%Y-%m-%d")
+```
+
+```{r}
+data2 = dplyr::arrange(.data = data2, Date)
+head(data2)
+
+```
+```{r}
+data2$SKU = NULL
+```
+
+```{r}
+head(data2, 15)
+```
+
+```{r}
+data3 = data2 %>% dplyr::group_by(Date)%>%summarise("Min_price" = min(Price))
+head(data3, 15)
+
+```
+
+```{r}
+min_date = min(data3$Date)
+max_date = max(data3$Date)
+min_date
+max_date
+seq_date = data.frame("DateRange" = seq(min_date, max_date, by = "days"))
+class(seq_date)
+```
+
+```{r}
+#sub1 = seq_date %>% dplyr::full_join(x = data3, c("DateRange"="Date"))
+#merge(x = demographic, y = txn, by.x = "CustName",by.y = "CustomerName",all #=TRUE) -> FullJoin
+
+sub1 = merge(x = data3, y = seq_date, by.x = "Date", by.y = "DateRange", all = TRUE)
+
+```
+
+```{r}
+head(sub1, n=20)
+class(sub1)
+```
+
+```{r}
+rm(min_date, max_date)
+
+```
+
+```{r}
+sub1$Min_price = (na.locf(sub1$Min_price, fromLast = F)+na.locf(sub1$Min_price, fromLast = T))/2
+
+head(sub1, 20)
+```
+
+```{r}
+plot(sub1, type = "l")
+```
+
+#here on words time series module will start
+```{r}
+sub1$Year = as.numeric(format(sub1$Date, format = "%Y")) 
+sub1$Month = as.numeric(format(sub1$Date, format = "%m")) 
+head(sub1, 20)
+```
+
+```{r}
+sub1 = sub1 %>% group_by(Year, Month)%>%summarise("MeanPrice" = mean(Min_price))
+
+```
+```{r}
+head(sub1, 20)
+```
+```{r}
+sub1 = data.frame(sub1)
+plot(sub1$MeanPrice, type="l")
+```
+```{r}
+# Regression on time , Need to creat sequetial order of time and seasonality
+sub1$Time = seq(1:nrow(sub1))
+sub1$Month = as.factor(sub1$Month)
+sub1$Year = NULL
+sub1
+```
+
+# splitting the data into train and test data
+```{r}
+train = sub1[1:53,]
+test = sub1[54:nrow(sub1), ]
+
+```
+
+
+```{r}
+# simple linear regression
+linear_model = lm(data = train, formula = MeanPrice~Time)
+pred_train  = predict(linear_model, train)
+pred_test = predict(linear_model, test)
+
+```
+
+
+```{r}
+plot(train$MeanPrice, type = "l")
+points(train$Time, pred_train, type = "l", col = "red", lwd = 2)
+
+```
+
+```{r}
+lm_train_error1 = regr.eval(train$MeanPrice, preds = pred_train)
+lm_test_error1 = regr.eval(test$MeanPrice, preds = pred_test)
+lm_test_error1
+lm_train_error1
+```
+
+```{r}
+lm2 = lm(formula = train$MeanPrice~poly(train$Time, 2, raw = TRUE), data = train)
+pred_train = predict(lm2, train)
+pred_test = predict(lm2, test)
+
+plot(train$MeanPrice, type = "l")
+points(train$Time, pred_train, type = "l", col = "red", lwd = 2)
+```
+
+```{r}
+lm_train_error2 = regr.eval(train$MeanPrice, preds = pred_train)
+lm_test_error2 = regr.eval(test$MeanPrice, preds = pred_test)
+lm_test_error2
+lm_train_error2
+```
+
+```{r}
+slm1 = lm(formula = train$MeanPrice~., data = train)
+pred_train = predict(slm1)
+pred_test = predict(slm1, test)
+
+plot(train$MeanPrice, type = "l")
+points(train$Time, pred_train, type = "l", col= "red", lwd=2)
+```
+```{r}
+slm_train_error2 = regr.eval(train$MeanPrice, preds = pred_train)
+slm_test_error2 = regr.eval(test$MeanPrice, preds = pred_test)
+slm_test_error2
+slm_train_error2
+```
+
+```{r}
+train_TS <- ts(train$MeanPrice, frequency = 12, start = c(2009, 4))
+train_TS
+
+test_TS <- ts(test$MeanPrice, frequency = 12, start = c(2013, 9))
+test_TS
+
+```
+```{r}
+plot(train_TS, 
+     type="l", lwd=3, col="blue", 
+     xlab="Monthly", ylab="Mean Price",
+     main="Aggregated Monthly Price Time series plot of 3 product")
+plot(test_TS, col="red", lwd=3)
+```
+```{r}
+train_Decomposed = decompose(train_TS)
+plot(train_Decomposed)
+rm(train_Decomposed)
+```
+```{r}
+fitsma = SMA(train_TS, n=2)
+predsma = forecast(fitsma, h=4)
+plot(predsma)
+```
+
+
+```{r}
+train_TS
+fitsma
+predsma$mean
+predsma
+```
+```{r}
+smaTrainError = regr.eval(train_TS[2:length(train_TS)], fitsma[2:length(train_TS)])
+smaTestError = regr.eval(test$MeanPrice, predsma$mean)
+smaTrainError
+smaTestError
+```
+
+```{r}
+fitwma = WMA(train_TS, n=2, 1:2)
+predwma = forecast(fitwma, h=4)
+plot(predwma)
+```
+```{r}
+train_TS
+fitwma
+predwma
+```
+```{r}
+wmaTrainError = regr.eval(train_TS[2:length(train_TS)], fitwma[2:length(train_TS)])
+wmaTestError = regr.eval(test$MeanPrice, predwma$mean)
+wmaTrainError
+wmaTestError
+```
+
+```{r}
+fitEma = EMA(train_TS, n=2)
+predema = forecast(fitEma, h=4)
+plot(predema)
+```
+
+```{r}
+train_TS
+fitEma
+predema
+```
+```{r}
+emaTrainError = regr.eval(train_TS[2:length(train_TS)], fitEma[2:length(train_TS)])
+emaTestError = regr.eval(test$MeanPrice, predema$mean)
+emaTrainError
+emaTestError
+```
+
+```{r}
+model_HW = HoltWinters(train_TS)
+model_HW
+```
+```{r}
+# Additive Model
+model_HW_Add = HoltWinters(train_TS, seasonal="additive")
+model_HW_Add
+```
+```{r}
+# Multiplicative Model
+model_HW_Mul = HoltWinters(train_TS, seasonal="multiplicative")
+model_HW_Mul
+```
+```{r}
+pred_train_HW = data.frame(model_HW_Mul$fitted)
+pred_train_HW
+pred_train_HW$xhat
+```
+```{r}
+pred_test_HW = forecast(model_HW_Mul, h = 4)
+
+plot(pred_test_HW)
+
+pred_test_HW
+
+pred_test_HW$mean
+```
+```{r}
+regr.eval(test$MeanPrice, pred_test_HW$mean)
+
+```
+
+```{r}
+hw_NT_NS = HoltWinters(train_TS, beta=F, gamma=F)
+hw_NT_NS
+```
+```{r}
+train_TS
+head(hw_NT_NS$fitted)
+```
+
+```{r}
+predhw_NT_NS = predict(hw_NT_NS, 4, prediction.interval = TRUE)
+predhw_NT_NS
+
+forecast(model_HW_Mul, h = 4)
+```
+
+```{r}
+regr.eval(train$MeanPrice[2:length(train$MeanPrice)], hw_NT_NS$fitted[,1])
+
+regr.eval(test$MeanPrice, predhw_NT_NS[,1])
+
+plot(hw_NT_NS, predhw_NT_NS)
+```
+```{r}
+hw_T_NS = HoltWinters(train_TS, beta=T, gamma=F)
+hw_T_NS
+
+train_TS
+head(hw_T_NS$fitted)
+
+predhw_T_NS = predict(hw_T_NS, 4, prediction.interval = TRUE)
+head(predhw_T_NS)
+```
+
+```{r}
+regr.eval(train$MeanPrice[3:length(train$MeanPrice)], hw_T_NS$fitted[,1])
+
+regr.eval(test$MeanPrice, predhw_T_NS[,1])
+
+plot(hw_T_NS, predhw_T_NS)
+```
+
+```{r}
+hw_T_S = HoltWinters(train_TS, beta=T, gamma=T)
+hw_T_S = HoltWinters(train_TS)
+hw_T_S
+
+head(train_TS)
+head(hw_T_S$fitted)
+
+predhw_T_S = predict(hw_T_S, 4, prediction.interval = TRUE)
+head(predhw_T_S)
+```
+```{r}
+regr.eval(train$MeanPrice[13:length(train$MeanPrice)], hw_T_S$fitted[,1])
+
+regr.eval(test$MeanPrice, predhw_T_S[,1])
+
+plot(hw_T_S, predhw_T_S)
+```
+
+```{r}
+hw = HoltWinters(train_TS)
+hw
+
+head(train_TS)
+head(hw$fitted)
+
+predhw = predict(hw, 4, prediction.interval = TRUE)
+head(predhw)
+```
+```{r}
+regr.eval(train$MeanPrice[13:length(train$MeanPrice)], hw$fitted[,1])
+
+regr.eval(test$MeanPrice, predhw[,1])
+
+plot(hw, predhw)
+```
+```{r}
+par(mfrow=c(1,1))
+plot(train_TS, type="l")
+acf(train_TS, lag=44)
+pacf(train_TS, lag=44)
+```
+
+```{r}
+par(mfrow=c(1,1))
+
+plot(diff(train_TS, lag=1), type="l")
+acf(diff(train_TS,lag=1), lag=43) 
+pacf(diff(train_TS, lag=1),lag=43)
+```
+
+```{r}
+par(mfrow=c(1,1))
+
+plot(diff(train_TS, lag=12), type="l")
+acf(diff(train_TS,lag=12), lag=43) 
+pacf(diff(train_TS, lag=12),lag=43)
+```
+
+```{r}
+ndiffs(train_TS)
+nsdiffs(train_TS)
+ndiffs(diff(train_TS,lag=12))
+```
+```{r}
+par(mfrow=c(1,1))
+
+plot(diff(train_TS, lag=12), type="l")
+acf(diff(train_TS,lag=1), lag=44) 
+pacf(diff(train_TS, lag=1),lag=44)
+```
+
+```{r}
+arima_model = arima(train_TS, order = c(2,0,1), 
+                    seasonal = list(order = c(0,1,0), period = 12))
+arima_model
+```
+```{r}
+auto_arima = auto.arima(train_TS)
+auto_arima
+```
+
+```{r}
+Box.test(auto_arima$residuals, lag = 12)
+acf(auto_arima$residuals)
+pacf(auto_arima$residuals)
+```
+
